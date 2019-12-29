@@ -1,24 +1,67 @@
 //include differten libs
-//DualTB9051FT lib 
+//DualTB9051FT lib
 #include "DualTB9051FTGMotorShield.h"
 
 //SerialCommands
 #include <Arduino.h>
 #include "SerialCommands.h"
 
-//Setup handler for input commands 
+//global varibales
+
+//Setup handler for input commands
 //max 32 chars
 char serial_command_buffer_[32];
 
-//Attenention the Line Feed ("LF") character (0x0A, \n) must be set to End of Line ("EOL") character (0x0D0A, \r\n) if windows is used for control 
+//Attenention the Line Feed ("LF") character (0x0A, \n) must be set to End of Line ("EOL") character (0x0D0A, \r\n) if windows is used for control
 SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_command_buffer_), "\n", " ");
 
-//Setup motor shield pins and instance 
+//Setup motor shield pins and instance
 DualTB9051FTGMotorShield ms;
+
+//Motor pwm interpolation variables
+int g_interpol_step_count = 0;
+float g_interpol_step_count_size = 0.000;
+
+float g_y0 = 0.0;       //Y-Start point current pwm
+float g_y1 = 0.0;             //Y-End point pwm
+const float g_x0 = 0.0;             //X-Start point is always 0
+float g_x1 = 0.0;             //X-End duration
+
+//Global update rate for pwm values 1/s (Hz)
+const int global_update_rate_Hz = 2;
+//calc ms from update rate
+const int global_update_rate = (1000 / global_update_rate_Hz);
 
 ///////////////////////////////////////MOTOR SECTION///////////////////////////////////////
 
-//Check motor current and H-Bride status 
+///////////////////////////////////////HELP FUNCTION SECTION///////////////////////////////////////
+void update_global_int(int current_pwm)
+{
+//  Serial.print("update_global_int: ");
+//  Serial.println(current_pwm);
+  g_y0 = current_pwm;
+}
+
+int check_boundaries(int pwm_value)
+{
+  int ret_value = pwm_value;
+  if (pwm_value < 0)
+  {
+    Serial.print("check_boundaries set pwm to 0");
+    ret_value = 0;
+  }
+  if (pwm_value > 400)
+  {
+    Serial.print("check_boundaries set pwm to 400");
+    ret_value = 400;
+  }
+
+  return ret_value;
+}
+
+///////////////////////////////////////HELP FUNCTION SECTION END///////////////////////////////////////
+
+//Check motor current and H-Bride status
 //For savety reasons, programm ends in while loop if motor fault is detected
 void stopIfFault()
 {
@@ -32,32 +75,86 @@ void stopIfFault()
 //helper function pass motor set cmd and pwm value
 bool set_motor1(int pwm)
 {
-  Serial.println("set_motor1: ");
-  Serial.println(pwm);
+//  Serial.println("set_motor1: ");
+//  Serial.println(pwm);
   if (pwm <= 0)
   {
-    Serial.println("Set PWM 0");
+//    Serial.println("Set PWM 0");
     ms.setM1Speed(0);
     stopIfFault();
+    update_global_int(0);
     return 0;
   }
   else if (pwm <= 400)
   {
-    Serial.println("Set PWM");
+//    Serial.println("Set PWM");
     ms.setM1Speed(pwm);
     stopIfFault();
-    Serial.print("Mc: ");
-    Serial.println(ms.getM1CurrentMilliamps());
+//    Serial.print("Mc: ");
+//    Serial.println(ms.getM1CurrentMilliamps());
+    update_global_int(pwm);
     return 0;
-  }  
+  }
   Serial.println("set_motor1: return 1 ");
 }
 
-///////////////////////////////////////MOTOR SECTION END ///////////////////////////////////////
+///////////////////////////////////////MOTOR SECTION END///////////////////////////////////////
+
+
+///////////////////////////////////////INTERPOLATION SECTION///////////////////////////////////////
+
+void calc_pwm_points(int end_point, int ramp_duration)
+{
+
+//  Serial.print("calc_pwm_points: ");
+
+  g_interpol_step_count = 0;
+
+  g_y1 = float(end_point);     //Y-End point
+  g_x1 = float(ramp_duration); //X-End point pwm
+
+  g_interpol_step_count_size = ramp_duration / calc_steps_from_sec(ramp_duration);
+
+  Serial.print("g_y1: ");
+  Serial.println(g_y1);
+  Serial.print("g_x1: ");
+  Serial.println(g_x1);
+  Serial.print("g_interpol_step_count_size: ");
+  Serial.println(g_interpol_step_count_size);
+}
+
+int get_new_pwm_value(void)
+{
+  float x = g_interpol_step_count_size * g_interpol_step_count;
+
+//  Serial.print("g_y1: ");
+//  Serial.println(g_y1);
+//  Serial.print("g_x1: ");
+//  Serial.println(g_x1);
+//  Serial.print("g_interpol_step_count_size: ");
+//  Serial.println(g_interpol_step_count_size);
+
+
+  int pwm_value = (((g_y0 * (g_x1 - x)) + (g_y1 * x)) / g_x1);
+  g_interpol_step_count = g_interpol_step_count + 1;
+  Serial.print("get_new_pwm_value: ");
+  Serial.println(pwm_value);
+  Serial.print("g_interpol_step_count: ");
+  Serial.println(g_interpol_step_count);
+
+  return check_boundaries(pwm_value);
+}
+
+float calc_steps_from_sec(int sec)
+{
+  return (sec * 1000) / global_update_rate;
+}
+
+///////////////////////////////////////INTERPOLATION SECTION END///////////////////////////////////////
 
 
 ///////////////////////////////////////SERIAL COMMAND SECTION///////////////////////////////////////
-//Handel unknow or incomplete commands  
+//Handel unknow or incomplete commands
 void cmd_unrecognized(SerialCommands* sender, const char* cmd)
 {
   sender->GetSerial()->print("Unrecognized command [");
@@ -80,34 +177,78 @@ void cmd_motor_set(SerialCommands* sender)
   sender->GetSerial()->println("Set pwm value: ");
   sender->GetSerial()->println(pwm);
 
-  if(set_motor1(pwm));
+  if (set_motor1(pwm) == 1);
   {
-    sender->GetSerial()->println("ERROR MOTOR CONTROL");
+    //sender->GetSerial()->println("ERROR MOTOR CONTROL");
     return;
   }
 }
 
+//First parameter LIN is required
+//Parameters: pwm end point, duration
+//e.g. LIN 300 2
+void cmd_lin_interpol_set(SerialCommands* sender)
+{
+  char* pwm_str = sender->Next();
+  if (pwm_str == NULL)
+  {
+    sender->GetSerial()->println("ERROR NO_PWM");
+    return;
+  }
+  int pwm = atoi(pwm_str);
+  sender->GetSerial()->println("Set pwm value: ");
+  sender->GetSerial()->println(pwm);
+
+  char* duration_sec = sender->Next();
+  if (duration_sec == NULL)
+  {
+    sender->GetSerial()->println("ERROR NO TIME SET");
+    return;
+  }
+  int seconds = atoi(duration_sec);
+
+  sender->GetSerial()->println("Set duration: ");
+  sender->GetSerial()->println(seconds);
+
+  int steps_current_run = calc_steps_from_sec(seconds);
+  calc_pwm_points(pwm, seconds);
+
+  sender->GetSerial()->println("START MOTOR LOOP LIN");
+  int current_pwm_value = 0;
+  for (int i = 0; i <= steps_current_run; i++) {
+    current_pwm_value = get_new_pwm_value();
+    bool return_value = set_motor1(current_pwm_value);
+//    sender->GetSerial()->print("set_motor1(current_pwm_value) return: ");
+//    sender->GetSerial()->println(return_value);
+    delay(global_update_rate);
+  }
+  update_global_int(pwm);
+  sender->GetSerial()->println("FINISH MOTOR LOOP LIN");
+}
+
 //Register Serial command function list (string compare)
 SerialCommand cmd_motor_set_("M1", cmd_motor_set);
+SerialCommand cmd_motor_lin_set_("LIN", cmd_lin_interpol_set);
 
 ///////////////////////////////////////SERIAL COMMAND SECTION END///////////////////////////////////////
 
 void setup() {
   //init serial device 115200 Baud
-  Serial.begin(57600);
+  Serial.begin(115200);
 
-  //Init the motor shield 
+  //Init the motor shield
   ms.init();
-  
+
   //Enable the H-Bride for motorcontrol
   ms.enableDrivers();
-  delay(1);       //ToDo remove after test 
+  delay(1);       //ToDo remove after test
 
   stopIfFault();
 
-  //Enable Serial commands for motor control 
+  //Enable Serial commands for motor control
   serial_commands_.SetDefaultHandler(cmd_unrecognized);
   serial_commands_.AddCommand(&cmd_motor_set_);
+  serial_commands_.AddCommand(&cmd_motor_lin_set_);
 
   Serial.println("Motor Control Ready!");
 
