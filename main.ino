@@ -160,27 +160,27 @@ bool start_program(int program_number)
   switch (program_number) {
 
     case 0:
-      sender->GetSerial()->println("Run Program 0");
+      Serial.println("Run Program 0");
       ret = program_0();
     break;
   
     case 1:
-      sender->GetSerial()->println("Run Program 1");
+      Serial.println("Run Program 1");
       ret = program_1();
     break;
   
     case 2:
-      sender->GetSerial()->println("Run Program 2");
+      Serial.println("Run Program 2");
       ret = program_2();
     break;
 
     case 3:
-      sender->GetSerial()->println("Run Program 3");
+      Serial.println("Run Program 3");
       ret = program_3();
     break;
   
     default:
-      sender->GetSerial()->println("NO PROGRAM FOUND!");
+      Serial.println("NO PROGRAM FOUND!");
       ret = true;
     break;
   }
@@ -191,17 +191,17 @@ bool start_program(int program_number)
 bool program_0(void)
 {
   bool ret  = false;
-  ret = bool set_motor1(20);
+  ret = set_motor1(20);
   delay(1000);
-  ret = bool set_motor1(40);
+  ret = set_motor1(40);
   delay(1000);
-  ret = bool set_motor1(60);
+  ret = set_motor1(60);
   delay(1000);
-  ret = bool set_motor1(40);
+  ret = set_motor1(40);
   delay(1000);
-  ret = bool set_motor1(20);
+  ret = set_motor1(20);
   delay(1000);
-  ret = bool set_motor1(0);
+  ret = set_motor1(0);
   return ret;
 }
 
@@ -212,7 +212,7 @@ bool program_1(void)
   bool ret  = false;
   for (int i = 0; i <= 400; i++)
   {
-    ret = bool set_motor1(i);
+    ret = set_motor1(i);
     delay(10);
   }
   return ret;
@@ -225,13 +225,13 @@ bool program_2(void)
   bool ret  = false;
   for (int i = 0; i <= 400; i++)
   {
-    ret = bool set_motor1(i);
+    ret = set_motor1(i);
     delay(20);
   }
 
   for (int i = 400; i >= -400; i--)
   {
-    ret = bool set_motor1(i);
+    ret = set_motor1(i);
     delay(20);
   }
   return ret;
@@ -249,7 +249,7 @@ bool program_3(void)
   bool ret  = false;
 
   //Set pwm to 0
-  ret = bool set_motor1(0);
+  ret = set_motor1(0);
 
   //clac interpolation 
   steps = calc_steps_from_sec(ramp_time);
