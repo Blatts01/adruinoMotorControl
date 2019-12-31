@@ -153,6 +153,134 @@ float calc_steps_from_sec(int sec)
 ///////////////////////////////////////INTERPOLATION SECTION END///////////////////////////////////////
 
 
+///////////////////////////////////////USER FUNCTION SECTION///////////////////////////////////////
+bool start_program(int program_number)
+{
+  bool ret  = false;
+  switch (program_number) {
+
+    case 0:
+      sender->GetSerial()->println("Run Program 0");
+      ret = program_0();
+    break;
+  
+    case 1:
+      sender->GetSerial()->println("Run Program 1");
+      ret = program_1();
+    break;
+  
+    case 2:
+      sender->GetSerial()->println("Run Program 2");
+      ret = program_2();
+    break;
+
+    case 3:
+      sender->GetSerial()->println("Run Program 3");
+      ret = program_3();
+    break;
+  
+    default:
+      sender->GetSerial()->println("NO PROGRAM FOUND!");
+      ret = true;
+    break;
+  }
+  return ret;
+}
+
+//demo programm 0
+bool program_0(void)
+{
+  bool ret  = false;
+  ret = bool set_motor1(20);
+  delay(1000);
+  ret = bool set_motor1(40);
+  delay(1000);
+  ret = bool set_motor1(60);
+  delay(1000);
+  ret = bool set_motor1(40);
+  delay(1000);
+  ret = bool set_motor1(20);
+  delay(1000);
+  ret = bool set_motor1(0);
+  return ret;
+}
+
+
+//demo programm 1
+bool program_1(void)
+{
+  bool ret  = false;
+  for (int i = 0; i <= 400; i++)
+  {
+    ret = bool set_motor1(i);
+    delay(10);
+  }
+  return ret;
+}
+
+
+//demo programm 2
+bool program_2(void)
+{
+  bool ret  = false;
+  for (int i = 0; i <= 400; i++)
+  {
+    ret = bool set_motor1(i);
+    delay(20);
+  }
+
+  for (int i = 400; i >= -400; i--)
+  {
+    ret = bool set_motor1(i);
+    delay(20);
+  }
+  return ret;
+}
+
+//demo programm 3
+bool program_3(void)
+{  
+  //RAMP 
+  // PWM 0 to 100 in 5 sec. 
+  int target_pwm = 100; 
+  int ramp_time = 5;
+  int current_pwm_value = 0;
+  int steps = 0;
+  bool ret  = false;
+
+  //Set pwm to 0
+  ret = bool set_motor1(0);
+
+  //clac interpolation 
+  steps = calc_steps_from_sec(ramp_time);
+  calc_pwm_points(target_pwm, ramp_time);
+
+  for (int i = 0; i <= steps; i++) {
+    current_pwm_value = get_new_pwm_value();
+    ret = set_motor1(current_pwm_value);
+    delay(global_update_rate);
+  }
+
+  //RAMP 
+  // PWM 100 to 0 in 10 sec. 
+  target_pwm = 0; 
+  ramp_time = 10;
+
+  //clac interpolation 
+  steps = calc_steps_from_sec(ramp_time);
+  calc_pwm_points(target_pwm, ramp_time);
+
+  for (int i = 0; i <= steps; i++) {
+    current_pwm_value = get_new_pwm_value();
+    ret = set_motor1(current_pwm_value);
+    delay(global_update_rate);
+  }
+  
+  return ret;
+}
+///////////////////////////////////////USER FUNCTION SECTION END///////////////////////////////////////
+
+
 ///////////////////////////////////////SERIAL COMMAND SECTION///////////////////////////////////////
 //Handel unknow or incomplete commands
 void cmd_unrecognized(SerialCommands* sender, const char* cmd)
@@ -226,11 +354,35 @@ void cmd_lin_interpol_set(SerialCommands* sender)
   sender->GetSerial()->println("FINISH MOTOR LOOP LIN");
 }
 
+//First parameter P is required
+//Optional parameters: Program number
+//e.g. P 2
+void cmd_program_set(SerialCommands* sender)
+{
+  char* program_str = sender->Next();
+  if (program_str == NULL)
+  {
+    sender->GetSerial()->println("ERROR NO PROGRAM NUMBER!");
+    return;
+  }
+  int program_number = atoi(program_str);
+  sender->GetSerial()->print("Set program number: ");
+  sender->GetSerial()->println(program_number);
+
+  if (start_program(program_number) == true);
+  {
+    //sender->GetSerial()->println("ERROR MOTOR CONTROL");
+    return;
+  }
+}
+
 //Register Serial command function list (string compare)
 SerialCommand cmd_motor_set_("M1", cmd_motor_set);
 SerialCommand cmd_motor_lin_set_("LIN", cmd_lin_interpol_set);
+SerialCommand cmd_program_set_("P", cmd_program_set);
 
 ///////////////////////////////////////SERIAL COMMAND SECTION END///////////////////////////////////////
+
 
 void setup() {
   //init serial device 115200 Baud
@@ -249,6 +401,7 @@ void setup() {
   serial_commands_.SetDefaultHandler(cmd_unrecognized);
   serial_commands_.AddCommand(&cmd_motor_set_);
   serial_commands_.AddCommand(&cmd_motor_lin_set_);
+  serial_commands_.AddCommand(&cmd_program_set_);
 
   Serial.println("Motor Control Ready!");
 
